@@ -4,10 +4,12 @@ const { config } = require('../config');
 
 const Retell = RetellSdk.default || RetellSdk.Retell;
 let client = null;
+let clientKey = '';
 function getClient() {
-  if (!client) {
-    if (!config.retell.apiKey) throw new Error('RETELL_API_KEY not set');
+  if (!client || clientKey !== config.retell.apiKey) {
+    if (!config.retell.apiKey) throw new Error('Retell is not connected yet (add your key under Integrations)');
     client = new Retell({ apiKey: config.retell.apiKey });
+    clientKey = config.retell.apiKey;
   }
   return client;
 }

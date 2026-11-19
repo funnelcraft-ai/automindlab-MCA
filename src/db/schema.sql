@@ -134,3 +134,36 @@ CREATE INDEX IF NOT EXISTS idx_calls_tenant_started ON calls (tenant_id, started
 CREATE INDEX IF NOT EXISTS idx_leads_tenant_activity ON leads (tenant_id, last_activity_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_lead ON messages (lead_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_events_tenant ON events (tenant_id, created_at DESC);
+
+-- ---------- v2: in-app settings, onboarding, invites, session security ----------
+CREATE TABLE IF NOT EXISTS app_settings (
+  key        TEXT PRIMARY KEY,
+  value_enc  TEXT NOT NULL,
+  updated_by INTEGER,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS invites (
+  id          SERIAL PRIMARY KEY,
+  tenant_id   INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  email       TEXT NOT NULL,
+  name        TEXT NOT NULL DEFAULT '',
+  token_hash  TEXT UNIQUE NOT NULL,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  used_at     TIMESTAMPTZ,
+  created_by  INTEGER,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS onboarding_step INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS website TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_name TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_email TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_phone TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS go_live_at TIMESTAMPTZ;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS test_call_ok BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_logins INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;

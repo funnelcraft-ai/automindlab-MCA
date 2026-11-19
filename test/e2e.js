@@ -8,12 +8,9 @@ const assert = require('assert/strict');
 process.env.DRY_RUN = 'true';
 process.env.TWILIO_VALIDATE_SIGNATURES = 'false';
 process.env.RETELL_VERIFY_SIGNATURES = 'true';
-process.env.RETELL_API_KEY = 'key_test_123';
-process.env.RETELL_AGENT_ID = 'agent_test';
-process.env.JWT_SECRET = 'x'.repeat(40);
 process.env.APP_ENCRYPTION_KEY = 'a'.repeat(64);
-process.env.ADMIN_EMAIL = 'admin@test.dev';
-process.env.ADMIN_PASSWORD = 'admin-pass-123';
+process.env.SETUP_CODE = 'TESTCODE';
+const RETELL_KEY = 'key_test_123';
 process.env.PORT = '3999';
 process.env.PUBLIC_BASE_URL = 'http://localhost:3999';
 process.env.SHORT_CALL_SECONDS = '15';
@@ -28,8 +25,9 @@ const CALLER = '+15125550123';
 let cookie = '';
 let passed = 0;
 
-async function req(method, path, { body, form, headers = {}, raw } = {}) {
+async function req(method, path, { body, form, headers = {}, raw, csrf = true } = {}) {
   const h = { ...headers };
+  if (csrf && method !== 'GET' && path.startsWith('/api')) h['X-Requested-With'] = 'mca';
   let payload;
   if (form) {
     h['Content-Type'] = 'application/x-www-form-urlencoded';
@@ -55,7 +53,7 @@ async function req(method, path, { body, form, headers = {}, raw } = {}) {
 
 async function retell(path, obj, { sign = true } = {}) {
   const raw = JSON.stringify(obj);
-  const headers = sign ? { 'x-retell-signature': await RetellSdk.sign(raw, process.env.RETELL_API_KEY) } : {};
+  const headers = sign ? { 'x-retell-signature': await RetellSdk.sign(raw, RETELL_KEY) } : {};
   return req('POST', path, { raw, headers });
 }
 
@@ -95,22 +93,95 @@ async function main() {
   await wait(300);
   const cal = await startMockCal();
 
-  console.log('Auth & tenant setup');
-  let r = await req('GET', '/api/me');
+  console.log('First-run setup & security');
+  let r = await req('GET', '/api/setup/status');
+  assert.equal(r.json.needsSetup, true);
+  r = await req('GET', '/api/me');
   assert.equal(r.status, 401);
-  r = await req('POST', '/api/login', { body: { email: 'admin@test.dev', password: 'wrong' } });
-  assert.equal(r.status, 401);
-  r = await req('POST', '/api/login', { body: { email: 'admin@test.dev', password: 'admin-pass-123' } });
-  assert.equal(r.status, 200);
-  ok('admin login');
-  r = await req('POST', '/api/tenants', { body: { name: 'Lone Star Heating & Air', twilio_number: '(512) 555-0199', timezone: 'America/Chicago' } });
+  r = await req('POST', '/api/setup', { body: { setupCode: 'WRONG', email: 'admin@test.dev', password: 'Skyline-pass-123' } });
+  assert.equal(r.status, 403);
+  r = await req('POST', '/api/setup', { body: { setupCode: 'testcode', email: 'admin@test.dev', password: 'short' } });
+  assert.equal(r.status, 400);
+  r = await req('POST', '/api/setup', { body: { setupCode: 'testcode', email: 'admin@test.dev', password: 'Skyline-pass-123', agencyName: 'Automindlab', name: 'Joy' } });
+  assert.equal(r.status, 200, r.text);
+  const adminCookie = cookie;
+  ok('setup code required; weak password refused; admin created');
+  r = await req('POST', '/api/setup', { body: { setupCode: 'testcode', email: 'x@test.dev', password: 'Another-pass-123' } });
+  assert.equal(r.status, 409);
+  ok('setup cannot be run twice');
+  r = await req('POST', '/api/tenants', { body: { name: 'csrf' }, csrf: false });
+  assert.equal(r.status, 403);
+  r = await req('POST', '/api/tenants', { body: { name: 'csrf' }, headers: { Origin: 'https://evil.example' } });
+  assert.equal(r.status, 403);
+  ok('state-changing requests without CSRF header or from another origin are blocked');
+  r = await fetch(BASE + '/');
+  assert.match(r.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  assert.equal(r.headers.get('x-frame-options'), 'DENY');
+  ok('security headers present');
+
+  console.log('Integrations: paste keys, test, create voice agent');
+  r = await req('PUT', '/api/integrations', { body: { values: { twilio_account_sid: 'not-a-sid' } } });
+  assert.equal(r.status, 400);
+  r = await req('PUT', '/api/integrations', {
+    body: { values: { twilio_account_sid: 'AC' + 'b'.repeat(32), twilio_auth_token: 'super-secret-token', retell_api_key: RETELL_KEY, public_base_url: BASE } },
+  });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.settings.twilio_auth_token.value, '••••oken');
+  assert.ok(!JSON.stringify(r.json).includes('super-secret-token'), 'secret never returned');
+  const raw = await db.many('SELECT value_enc FROM app_settings');
+  assert.ok(raw.every((x) => !x.value_enc.includes('super-secret') && !x.value_enc.includes(RETELL_KEY)), 'stored encrypted');
+  r = await req('POST', '/api/integrations/twilio/test');
+  assert.equal(r.json.ok, true);
+  r = await req('POST', '/api/integrations/retell/provision');
+  assert.equal(r.json.ok, true, r.text);
+  r = await req('GET', '/api/integrations');
+  assert.equal(r.json.settings.retell_agent_id.set, true);
+  assert.equal(r.json.readiness.find((x) => x.key === 'agent').ok, true);
+  ok('keys validated, encrypted at rest, masked in UI; voice agent provisioned');
+
+  console.log('Onboarding a business');
+  r = await req('POST', '/api/tenants', { body: { name: 'Lone Star Heating & Air', timezone: 'America/Chicago' } });
   const tid = r.json.id;
+  assert.equal(r.json.active, false);
+  r = await req('PUT', `/api/tenants/${tid}`, { body: { notify_phones: '512-555-0100, bad' } });
+  assert.equal(r.status, 400);
+  r = await req('PUT', `/api/tenants/${tid}`, { body: { booking_link: 'javascript:alert(1)' } });
+  assert.equal(r.status, 400);
+  ok('input validation on business settings');
+  r = await req('POST', `/api/tenants/${tid}/go-live`);
+  assert.equal(r.status, 400);
+  assert.match(r.json.error, /phone number/);
+  r = await req('GET', '/api/numbers/search?areaCode=512');
+  assert.ok(r.json.length > 0);
+  r = await req('POST', `/api/tenants/${tid}/number`, { body: { phoneNumber: TWILIO_NUM, buy: true } });
+  assert.equal(r.status, 400, 'purchase needs explicit confirmation');
+  r = await req('POST', `/api/tenants/${tid}/number`, { body: { phoneNumber: TWILIO_NUM, buy: true, confirm: TWILIO_NUM } });
   assert.equal(r.json.twilio_number, TWILIO_NUM);
   r = await req('PUT', `/api/tenants/${tid}`, {
-    body: { notify_phones: '+15125550100', notify_emails: 'owner@lonestar.test', booking_provider: 'link', booking_link: 'https://cal.id/lonestar', service_area: 'Austin, Round Rock' },
+    body: { owner_phone: '(512) 555-0100', notify_phones: '+15125550100', notify_emails: 'owner@lonestar.test', booking_provider: 'link', booking_link: 'https://cal.id/lonestar', service_area: 'Austin, Round Rock' },
   });
   assert.equal(r.json.booking_link, 'https://cal.id/lonestar');
-  ok('tenant created + configured');
+  assert.equal(r.json.owner_phone, '+15125550100');
+  ok('number search + confirmed purchase + configuration');
+  r = await req('POST', '/twilio/voice', { form: { CallSid: 'CA_T1', From: '+19725550000', To: TWILIO_NUM } });
+  assert.match(r.text, /not in service/);
+  r = await req('POST', '/twilio/voice', { form: { CallSid: 'CA_T2', From: '+15125550100', To: TWILIO_NUM } });
+  assert.match(r.text, /<Sip>/);
+  ok('test mode: only owner/alert phones reach the agent before go-live');
+  r = await req('GET', `/api/tenants/${tid}/checklist`);
+  assert.equal(r.json.items.find((i) => i.key === 'call').ok, true);
+  r = await req('POST', `/api/tenants/${tid}/go-live`);
+  assert.equal(r.status, 200, r.text);
+  ok('checklist passes; business goes live');
+
+  r = await req('POST', `/api/tenants/${tid}/invites`, { body: { email: 'Owner@LoneStar.test' } });
+  const inviteToken = r.json.link.split('/invite/')[1];
+  assert.ok(inviteToken && inviteToken.length > 30);
+  const stored = await db.one('SELECT token_hash FROM invites WHERE email=$1', ['owner@lonestar.test']);
+  assert.notEqual(stored.token_hash, inviteToken, 'only a hash of the invite token is stored');
+  ok('invite link created (hashed at rest)');
+  await db.query("DELETE FROM calls WHERE twilio_call_sid IN ('CA_T1','CA_T2')");
+  await db.query('DELETE FROM leads');
 
   console.log('Flow 1: forwarded missed call -> AI conversation -> follow-up text');
   r = await req('POST', '/twilio/voice', { form: { CallSid: 'CA001', From: CALLER, To: TWILIO_NUM } });
@@ -253,32 +324,68 @@ async function main() {
 
   console.log('Dashboard API');
   r = await req('GET', `/api/stats?tenant=${tid}`);
-  assert.equal(r.json.calls, 5);
-  assert.equal(r.json.booked, 1);
-  assert.equal(r.json.est_revenue, 350);
+  assert.equal(r.json.current.calls, 5);
+  assert.equal(r.json.current.booked, 1);
+  assert.equal(r.json.current.revenue, 350);
+  assert.equal(r.json.revenueDaily.length, 1);
+  r = await fetch(BASE + `/api/leads.csv?tenant=${tid}`, { headers: { Cookie: cookie } });
+  assert.match(await r.text(), /^created_at,business,name/);
   r = await req('GET', `/api/leads?tenant=${tid}`);
   assert.ok(r.json.length >= 4);
   r = await req('GET', `/api/leads/${lead.id}`);
   assert.ok(r.json.calls.length >= 1 && r.json.messages.length >= 3 && r.json.optedOut === true);
   ok('stats, leads list, lead detail');
 
-  // second tenant + client isolation
-  r = await req('POST', '/api/tenants', { body: { name: 'Other Co', twilio_number: '+15125550200' } });
+  // second tenant + client isolation via invite acceptance
+  r = await req('POST', '/api/tenants', { body: { name: 'Other Co' } });
   const tid2 = r.json.id;
-  r = await req('POST', `/api/tenants/${tid}/users`, { body: { email: 'owner@lonestar.test', password: 'client-pass-123', name: 'Owner' } });
-  assert.equal(r.status, 200);
   cookie = '';
-  await req('POST', '/api/login', { body: { email: 'owner@lonestar.test', password: 'client-pass-123' } });
+  r = await req('GET', `/api/invite/${inviteToken}`);
+  assert.equal(r.json.business, 'Lone Star Heating & Air');
+  r = await req('POST', `/api/invite/${inviteToken}`, { body: { password: 'weak' } });
+  assert.equal(r.status, 400);
+  r = await req('POST', `/api/invite/${inviteToken}`, { body: { password: 'Client-pass-123', name: 'Mike' } });
+  assert.equal(r.status, 200, r.text);
+  const clientCookie = cookie;
+  cookie = '';
+  r = await req('POST', `/api/invite/${inviteToken}`, { body: { password: 'Client-pass-123' } });
+  assert.equal(r.status, 404, 'invite is single-use');
+  cookie = clientCookie;
   r = await req('GET', `/api/tenants/${tid2}`);
   assert.equal(r.json.id, tid, 'client is locked to own tenant');
   r = await req('GET', '/api/tenants');
   assert.equal(r.json.length, 1);
-  r = await req('PUT', `/api/tenants/${tid2}`, { body: { twilio_number: '+15125550999', agent_name: 'Sam' } });
-  assert.equal(r.json.twilio_number, TWILIO_NUM, 'client cannot change telephony');
+  r = await req('PUT', `/api/tenants/${tid2}`, { body: { mode: 'ring_first', agent_name: 'Sam' } });
+  assert.equal(r.json.mode, 'forward', 'client cannot change routing');
   assert.equal(r.json.agent_name, 'Sam');
+  r = await req('GET', '/api/integrations');
+  assert.equal(r.status, 403);
   r = await req('POST', '/api/tenants', { body: { name: 'hack' } });
   assert.equal(r.status, 403);
-  ok('client users are isolated to their own business');
+  r = await req('GET', `/api/leads/${lead.id}`);
+  assert.equal(r.status, 200);
+  ok('invite accepted once; client isolated to own business; no admin access');
+
+  // password change signs out other sessions
+  const otherDevice = clientCookie;
+  r = await req('POST', '/api/me/password', { body: { current: 'Client-pass-123', next: 'Client-pass-456!' } });
+  assert.equal(r.status, 200);
+  const save = cookie;
+  cookie = otherDevice;
+  r = await req('GET', '/api/me');
+  assert.equal(r.status, 401);
+  cookie = save;
+  r = await req('GET', '/api/me');
+  assert.equal(r.status, 200);
+  ok('password change revokes other sessions');
+
+  // lockout after repeated failures
+  cookie = '';
+  for (let i = 0; i < 5; i++) await req('POST', '/api/login', { body: { email: 'owner@lonestar.test', password: 'nope-nope-1' } });
+  r = await req('POST', '/api/login', { body: { email: 'owner@lonestar.test', password: 'Client-pass-456!' } });
+  assert.equal(r.status, 429);
+  ok('account locks after 5 failed sign-ins');
+  cookie = adminCookie;
 
   // static + health
   r = await req('GET', '/health');

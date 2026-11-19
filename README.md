@@ -29,74 +29,75 @@ Safety nets: hang-ups while ringing get a text-back; Retell failures fall back t
 
 - Node 20+ / Express, PostgreSQL (Railway)
 - Twilio (numbers, voice routing, SMS) + Retell AI (voice agent, dial-to-SIP)
-- SMS brain: any OpenAI-compatible API (OpenAI, OpenRouter, Gemini, Groq) via `LLM_BASE_URL`
-- Booking: Google Calendar (OAuth per client), Cal.com API v2, or a booking link (cal.id, Calendly…), or "team calls back"
-- Alerts: SMS to owner phones + email over SMTP (Zoho works)
-- Dashboard: vanilla JS, no build step (`/public`)
+- SMS brain + dashboard assistant: any OpenAI-compatible API
+- Booking: Google Calendar (OAuth per business), Cal.com API v2, a booking link (cal.id, Calendly…), or "team calls back"
+- Alerts: SMS to owner phones + email over SMTP
+- Dashboard: vanilla JS modules, no build step (`/public`), light + dark, mobile-friendly
 
-## 1. Deploy (Railway, ~15 min)
+## 1. Deploy (Railway, ~10 min)
 
-1. Push this folder to a private GitHub repo and create a Railway project from it.
-2. Add the **PostgreSQL** plugin. Set `DATABASE_URL` to the plugin's URL (`${{Postgres.DATABASE_URL}}`).
-3. Copy `.env.example` into Railway variables and fill in the values. Generate the secrets with:
-   `openssl rand -hex 32` → `APP_ENCRYPTION_KEY` (do not change it after go-live) · `openssl rand -base64 48` → `JWT_SECRET`
-4. Generate a domain (or attach `calls.automindlab.io`) and set `PUBLIC_BASE_URL` to it (https, no trailing slash).
-5. Deploy. The schema migrates on boot and the admin login from `ADMIN_EMAIL` / `ADMIN_PASSWORD` is created. `/health` should return `{"ok":true}`.
+1. Push this folder to a private GitHub repo and create a Railway project from it. Add the **PostgreSQL** plugin.
+2. Set **two** variables on the service:
+   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}`
+   - `APP_ENCRYPTION_KEY` = output of `openssl rand -hex 32`. Keep it safe and never change it.
+3. Generate a Railway domain (or attach `calls.automindlab.io`) and deploy.
+4. Open **Deployments → View logs** and copy the **FIRST-TIME SETUP** code.
+5. Open the app URL. Enter the setup code, your agency name, email and a password. This screen works only once.
 
-Keep **one replica**: per-lead SMS locks and the sweeper run in-process.
+## 2. Paste your keys (Integrations page)
 
-## 2. Retell (voice)
+Each card has **Save & test**, which confirms the key works before you rely on it. Keys are encrypted (AES-256-GCM) before storage, and only the last 4 characters are ever shown again.
 
-1. Create a Retell account and **add a payment card**. Dial-to-SIP calls are refused on trial credit.
-2. Copy the API key that has the **webhook badge** into `RETELL_API_KEY`. It signs both webhooks and tool calls.
-3. With `PUBLIC_BASE_URL` set, run once locally or in a Railway shell:
-   ```
-   npm run setup:retell
-   ```
-   This creates one shared LLM + agent (prompt, 5 custom tools, end_call, post-call analysis, webhook URL). Put the printed `RETELL_LLM_ID` and `RETELL_AGENT_ID` into Railway and redeploy.
-4. After you change the prompt in `src/agent/prompt.js`, re-run the same command. With both IDs set, it updates the existing LLM and agent in place.
+| Card | What to paste | Where to find it |
+|---|---|---|
+| App address | Public URL (pre-filled on Railway) | Your domain |
+| Twilio | Account SID, Auth Token, optional A2P Messaging Service SID | console.twilio.com → Account info |
+| Retell AI | API key **with the webhook badge** (card on file required) → then **Create voice agent** | dashboard.retellai.com → API keys |
+| SMS AI (optional) | OpenAI-compatible key | platform.openai.com/api-keys |
+| Email alerts (optional) | SMTP host/user/password | Zoho / Google Workspace / Hostinger |
+| Google Calendar (optional) | OAuth Web client ID + secret (redirect URI shown on the card) | console.cloud.google.com → Credentials |
 
-Every business shares this agent. Business name, services, hours, area, booking mode, emergency policy and what is known about the caller are injected per call as dynamic variables. Per-business voice is an optional override in the dashboard.
+The readiness bar turns green when Twilio, Retell, the voice agent and an https address are in place. If you later change the app address, the voice agent's webhook and tool URLs update automatically.
 
-## 3. Twilio (numbers + SMS)
+## 3. Onboard a business (guided, ~10 min)
 
-1. Buy one **local number per client**, in their area code.
-2. **US SMS needs A2P 10DLC registration**: since Feb 2025, carriers block unregistered 10DLC traffic. As an agency (ISV), register **each client's brand** plus a campaign (use case: *Customer Care*/*Mixed*), and attach their number to a Messaging Service. Approval can take days to weeks. Toll-free verification is often faster, so a toll-free number is a reasonable stopgap.
-   - Message-flow wording for the campaign: *"Customers who call {Business} and are not answered receive one text from the business number offering help with their service request. Customers can reply to continue the conversation; Reply STOP to opt out, HELP for help."*
-   - Put the Messaging Service SID on the business (dashboard → Phone routing) or globally in `TWILIO_MESSAGING_SERVICE_SID`. If a Messaging Service is used, set its **incoming message webhook** to `{PUBLIC_BASE_URL}/twilio/sms`.
-3. In the dashboard: **Clients → business → Agent settings → "Point Twilio number at this app"**. That sets the number's voice URL, status callback, and (if no Messaging Service is used) its SMS URL.
-4. Voice calls work immediately. Texts only deliver reliably once A2P is approved.
+**Businesses → New business** opens a 6-step wizard. Progress is saved at every step, so you can stop and resume.
 
-## 4. Onboard a client (10 min)
+1. **Business details**: name, industry, website, time zone, owner contact, agent name.
+2. **Services & hours**: one-click service presets per industry, service area, weekly hours, emergency rules, pricing guidance, extra knowledge, average job value.
+3. **Booking**: Google Calendar (connect button), Cal.com, booking link, or callback. **Preview open windows** shows exactly what the agent will offer.
+4. **Phone number**: search by area code and **buy a number in one click** (with a confirmation step), or pick one you already own. Webhooks are configured automatically. Then choose *forward missed calls* or *ring the team first*, plus an optional emergency live-transfer number.
+5. **Alerts & texts**: alert phones/emails, text-back wording with a live phone preview, AI SMS on/off, **send a test text-back**.
+6. **Test & go live**: launch checklist, a **live "waiting for your test call" watcher**, copy-ready carrier forwarding codes for this number (Verizon `*71…`, AT&T/T-Mobile `**004*…#`, VoIP), and **invite the owner** with a secure one-time link. **Go live** is blocked until every required check passes.
 
-1. **Clients → Add a business** (name, time zone, Twilio number).
-2. **Agent settings**: services, service area, hours, emergency policy, pricing guidance, alert phones/emails, average job value.
-3. **Booking**, pick one:
-   - *Google Calendar*: set `GOOGLE_CLIENT_ID/SECRET` (Web OAuth client, redirect `{PUBLIC_BASE_URL}/oauth/google/callback`, Calendar API enabled), then **Connect Google Calendar**. Windows come from business hours minus busy times.
-   - *Cal.com API*: API key + event type ID. The base URL is configurable for Cal.com-compatible hosts.
-   - *Booking link*: e.g. `https://cal.id/clientname`. The AI texts the link and adds it to text-backs. **Use this mode for cal.id**: I couldn't confirm a public cal.id booking API, so live booking into cal.id isn't wired up.
-   - *None*: the AI collects details and the team calls back.
-4. **Routing mode**:
-   - *forward* (most common): the client keeps their number and turns on **conditional call forwarding** (no-answer/busy) to the Twilio number. Typical codes are below; confirm with the carrier.
-     - Verizon: `*71` + Twilio number (cancel `*73`)
-     - AT&T / T-Mobile: `**004*` + Twilio number + `#` (cancel `##004#`)
-     - VoIP/PBX (RingCentral, Google Voice, Ooma, etc.): set "forward unanswered calls" in the admin portal.
-   - *ring_first*: the Twilio number becomes the public number (website, GBP, ads). It rings the team phone for N seconds, then the AI takes over. Keep N **below the team phone's voicemail pickup** (usually 20–25s). If voicemail answers first, the call counts as answered.
-5. Optional **emergency live transfer**: an on-call tech cell. When the AI detects an emergency, it alerts by text and moves the live call to that number.
-6. **Send test text-back** to your own phone, then place a real test call and let it ring out.
-7. **Clients → Give a client dashboard access** creates their login. Clients only see their own business and can't change phone routing.
+**Test mode:** until a business goes live, only its owner, alert and team phones reach the agent; anyone else hears "not in service". You can test end to end without touching real customers. **Pause** takes a live business offline instantly.
 
-## 5. Local development
+Once live, the same page turns into tabbed settings. Business owners can edit their script, hours, booking and alerts from their own login. Phone routing, numbers and go-live stay with the agency.
+
+## 4. Security
+
+- Only `DATABASE_URL` and `APP_ENCRYPTION_KEY` live in the environment. All other secrets are encrypted in the database and never sent back to the browser.
+- First-run setup needs a one-time code from the server logs, so whoever finds the URL first can't claim the instance. It works only while no admin exists.
+- Sessions: httpOnly, SameSite cookies, 7-day expiry, rechecked against the database on every request. Changing a password or using "sign out everywhere" revokes all other sessions.
+- Passwords: 10+ characters, mixed, not containing the email name; bcrypt cost 12. Accounts lock for 15 minutes after 5 failures, and sign-in endpoints are rate limited.
+- CSRF: every state-changing call requires a custom header and a same-origin `Origin`. Strict CSP, `frame-ancestors 'none'`, HSTS on https, nosniff, no third-party scripts or fonts.
+- Webhooks: Twilio signatures are verified (`X-Twilio-Signature`). Retell webhooks and tool calls are verified with the Retell signature, plus a random shared tool secret.
+- Tenancy: business users are hard-scoped to their own business on every query and can't reach admin endpoints.
+- Invites: 32-byte random tokens, stored only as SHA-256 hashes, single-use, expire after 7 days.
+- Number purchases need explicit confirmation of the exact number. Settings changes, purchases, invites, go-live and lockouts are written to an audit log (`events` table).
+- CSV export is protected against spreadsheet formula injection.
+
+## 5. Local development & demo data
 
 ```
-cp .env.example .env    # set DATABASE_URL, secrets; DRY_RUN=true logs texts instead of sending
+cp .env.example .env    # DATABASE_URL + APP_ENCRYPTION_KEY; add DRY_RUN=true to simulate texts/calls/purchases
 npm install
-npm start               # http://localhost:3000
-npm test                # end-to-end simulation (needs a throwaway Postgres DB; it DROPS the public schema)
+npm start               # setup code prints in the console
+npm run seed:demo       # adds "Lone Star Heating & Air" with 45 days of realistic calls, leads and bookings (great for sales demos)
+npm test                # 28 end-to-end checks (needs a throwaway Postgres DB; it DROPS the public schema)
 ```
-For real calls locally, expose the port with a tunnel (ngrok / cloudflared), set `PUBLIC_BASE_URL` to it, and re-run `npm run setup:retell`.
 
-`npm test` simulates the full flows against real Postgres, with signed Retell webhooks and a mock Cal.com API: forwarded call → AI → follow-up text; SMS AI reply; STOP opt-out; ring-first hang-up → text-back; ring-first → AI → live Cal.com booking (and a refused stale slot); early hang-up; spam/anonymous; dashboard stats; client isolation.
+The tests cover first-run setup, CSRF/origin blocking, security headers, encrypted key storage and masking, voice-agent provisioning, input validation, number purchase confirmation, test mode, the go-live checklist, hashed single-use invites, client isolation, session revocation, account lockout, and every call/SMS flow (AI conversation, SMS AI, STOP, ring-first hang-up, Cal.com booking, early hang-up, spam).
 
 ## Compliance notes (not legal advice; have counsel review before launch)
 
@@ -105,27 +106,32 @@ For real calls locally, expose the port with a tunnel (ngrok / cloudflared), set
 - A missed call is not written SMS consent. A text-back responding to the caller's own inquiry is the common industry practice, but the TCPA rules (including the 2025–26 consent-revocation changes) are worth a legal review for your client agreements. **Don't use these numbers for marketing blasts.**
 - The emergency flow tells callers to leave and call 911/the gas utility for gas smells or CO alarms. Keep that in any prompt edits.
 
-## Files
+## Files (main)
 
 ```
-src/server.js              app, OAuth callback, admin seed, stale-call sweeper
+src/server.js              app, security headers, OAuth callback, setup code, stale-call sweeper
+src/services/settings.js   encrypted in-app key store (env vars override)
+src/services/integrations.js  "Save & test" checks + readiness checklist
+src/services/provision.js  creates/updates the shared Retell agent
+src/lib/auth.js            sessions, CSRF guard, password policy, tokens
 src/routes/twilio.js       voice routing (forward / ring_first / SIP to Retell), status, inbound SMS, STOP
 src/routes/retell.js       signed webhooks (call_started/ended/analyzed) + custom tool endpoints
-src/routes/api.js          dashboard API: auth, clients, settings, stats, leads, SMS takeover
+src/routes/api.js          setup, auth, integrations, onboarding, numbers, invites, stats, leads, assistant
 src/services/actions.js    availability, booking, lead capture, booking link, emergency transfer + tool schemas
 src/services/booking.js    Google Calendar, Cal.com v2 providers
 src/services/leads.js      lead upsert, opt-outs, text-back
 src/services/notify.js     owner SMS + email alerts
 src/agent/prompt.js        voice prompt, greeting, post-call analysis fields, SMS prompt
 src/agent/sms-agent.js     SMS AI with tool calling
-scripts/setup-retell.js    create/update the Retell LLM + agent
-public/                    dashboard
+scripts/setup-retell.js    CLI alternative to the "Create voice agent" button
+scripts/seed-demo.js       demo business with realistic history
+public/js/                 dashboard (main, shell, dashboard, leads, business wizard, admin/integrations)
 test/e2e.js                end-to-end simulation
 ```
 
 ## Known limits / next steps
 
 - Live booking into cal.id isn't supported yet (link mode only) until its API is confirmed.
-- Single instance by design. Scaling out needs a shared lock (Postgres advisory locks) and a single sweeper.
+- Keep **one replica**: rate limits, per-lead SMS locks and the sweeper are in-process. Scaling out needs a shared lock (Postgres advisory locks) and a single sweeper.
 - No billing or usage metering per client. Retell and Twilio costs land on the agency account. Per-client minutes can be pulled from the `calls` table (`duration_sec`).
 - Outbound "speed-to-lead" callbacks (calling web-form leads) would be a natural add-on using Retell `createPhoneCall`.

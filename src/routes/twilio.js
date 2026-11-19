@@ -2,7 +2,7 @@
 const express = require('express');
 const db = require('../db');
 const { config } = require('../config');
-const { toE164 } = require('../lib/util');
+const { toE164, splitList } = require('../lib/util');
 const { VoiceResponse, MessagingResponse, validateTwilio } = require('../services/twilio');
 const retell = require('../services/retell');
 const leads = require('../services/leads');
@@ -20,10 +20,16 @@ function sendTwiml(res, vr) {
   res.type('text/xml').send(vr.toString());
 }
 
-async function tenantByNumber(num) {
+// Live businesses accept everyone. Businesses still onboarding are in "test mode": only the owner,
+// alert and team phones get through, so nothing reaches real customers before go-live.
+async function tenantByNumber(num, from) {
   const n = toE164(num);
   if (!n) return null;
-  return db.one('SELECT * FROM tenants WHERE twilio_number=$1 AND active=TRUE', [n]);
+  const t = await db.one('SELECT * FROM tenants WHERE twilio_number=$1', [n]);
+  if (!t) return null;
+  if (t.active) return t;
+  const testers = [t.owner_phone, t.ring_number, t.transfer_number, ...splitList(t.notify_phones)].map(toE164).filter(Boolean);
+  return testers.includes(toE164(from)) && !t.go_live_at ? t : null;
 }
 
 // Caller ID can be blocked/anonymous; only real E.164 numbers become leads.
@@ -71,7 +77,7 @@ async function handleUnreachedCaller(tenant, call, reason) {
 // ---------- Voice ----------
 router.post('/voice', async (req, res) => {
   const { CallSid, From, To } = req.body;
-  const tenant = await tenantByNumber(To);
+  const tenant = await tenantByNumber(To, From);
   const vr = new VoiceResponse();
   if (!tenant) {
     vr.say('Sorry, this number is not in service.');
@@ -227,7 +233,7 @@ router.post('/sms', async (req, res) => {
   sendTwiml(res, new MessagingResponse()); // reply asynchronously so Twilio never times out
   try {
     const { From, To, Body, MessageSid } = req.body;
-    const tenant = await tenantByNumber(To);
+    const tenant = await tenantByNumber(To, From);
     const phone = toE164(From);
     if (!tenant || !phone) return;
     await handleInboundSms(tenant, phone, String(Body || ''), MessageSid);

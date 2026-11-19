@@ -6,9 +6,12 @@ const { speakable } = require('../lib/time');
 const { sendSms } = require('./twilio');
 
 let transporter = null;
+let transporterKey = '';
 function mailer() {
   if (!config.smtp.host) return null;
-  if (!transporter) {
+  const key = JSON.stringify(config.smtp);
+  if (!transporter || key !== transporterKey) {
+    transporterKey = key;
     transporter = nodemailer.createTransport({
       host: config.smtp.host,
       port: config.smtp.port,
@@ -68,4 +71,4 @@ async function notifyOwner(tenant, lead, kind, extra = {}) {
   await Promise.all(tasks);
 }
 
-module.exports = { notifyOwner, sendEmail };
+module.exports = { notifyOwner, sendEmail, mailer };

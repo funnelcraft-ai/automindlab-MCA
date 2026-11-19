@@ -3,10 +3,14 @@ const twilio = require('twilio');
 const { config } = require('../config');
 
 let client = null;
+let clientKey = '';
+// Rebuilt automatically when the credentials change in the dashboard.
 function getClient() {
-  if (!client) {
-    if (!config.twilio.accountSid || !config.twilio.authToken) throw new Error('Twilio credentials not set');
+  const key = config.twilio.accountSid + ':' + config.twilio.authToken;
+  if (!client || key !== clientKey) {
+    if (!config.twilio.accountSid || !config.twilio.authToken) throw new Error('Twilio is not connected yet (add your keys under Integrations)');
     client = twilio(config.twilio.accountSid, config.twilio.authToken);
+    clientKey = key;
   }
   return client;
 }
@@ -41,22 +45,61 @@ async function sendSms({ from, to, body, messagingServiceSid, statusCallback }) 
 
 // Point a Twilio number's voice + SMS webhooks at this app.
 async function configureNumber(e164) {
-  const base = config.publicBaseUrl;
+  if (config.dryRun) return 'PN_dry';
   const list = await getClient().incomingPhoneNumbers.list({ phoneNumber: e164, limit: 1 });
-  if (!list.length) throw new Error(`Number ${e164} not found in this Twilio account`);
-  const update = {
+  if (!list.length) throw new Error(`Number ${e164} is not in your Twilio account`);
+  // When a Messaging Service is used, inbound SMS routing is set on the service instead.
+  await getClient().incomingPhoneNumbers(list[0].sid).update(webhookParams());
+  return list[0].sid;
+}
+
+function webhookParams() {
+  const base = config.publicBaseUrl;
+  const p = {
     voiceUrl: `${base}/twilio/voice`,
     voiceMethod: 'POST',
     statusCallback: `${base}/twilio/voice/status`,
     statusCallbackMethod: 'POST',
   };
-  // When a Messaging Service is used, inbound SMS routing is set on the service instead.
   if (!config.twilio.messagingServiceSid) {
-    update.smsUrl = `${base}/twilio/sms`;
-    update.smsMethod = 'POST';
+    p.smsUrl = `${base}/twilio/sms`;
+    p.smsMethod = 'POST';
   }
-  await getClient().incomingPhoneNumbers(list[0].sid).update(update);
-  return list[0].sid;
+  return p;
+}
+
+// Search purchasable US local numbers (voice + SMS capable).
+async function searchNumbers({ areaCode, contains, inRegion }) {
+  if (config.dryRun) {
+    const ac = /^\d{3}$/.test(areaCode || '') ? areaCode : '512';
+    return Array.from({ length: 6 }, (_, i) => ({
+      phoneNumber: `+1${ac}555${String(100 + i * 7).padStart(4, '0')}`,
+      locality: 'Austin',
+      region: 'TX',
+    }));
+  }
+  const q = { voiceEnabled: true, smsEnabled: true, limit: 12 };
+  if (/^\d{3}$/.test(areaCode || '')) q.areaCode = Number(areaCode);
+  if (contains) q.contains = String(contains).replace(/[^0-9*A-Za-z]/g, '').slice(0, 10);
+  if (inRegion) q.inRegion = String(inRegion).slice(0, 2).toUpperCase();
+  const list = await getClient().availablePhoneNumbers('US').local.list(q);
+  return list.map((n) => ({ phoneNumber: n.phoneNumber, locality: n.locality, region: n.region }));
+}
+
+async function listOwnedNumbers() {
+  if (config.dryRun) return [{ phoneNumber: '+15125550199', friendlyName: 'Demo number', voiceUrl: '' }];
+  const list = await getClient().incomingPhoneNumbers.list({ limit: 200 });
+  return list.map((n) => ({ phoneNumber: n.phoneNumber, friendlyName: n.friendlyName, voiceUrl: n.voiceUrl }));
+}
+
+// Buys a number and points it at this app in one step.
+async function buyNumber(phoneNumber, friendlyName) {
+  if (config.dryRun) {
+    console.log('[dry-run buy number]', phoneNumber);
+    return { sid: 'PN_dry_' + phoneNumber.slice(-4), phoneNumber };
+  }
+  const n = await getClient().incomingPhoneNumbers.create({ phoneNumber, friendlyName: String(friendlyName || '').slice(0, 64), ...webhookParams() });
+  return { sid: n.sid, phoneNumber: n.phoneNumber };
 }
 
 // Redirect a live call to new TwiML (used for live transfer).
@@ -68,4 +111,4 @@ async function updateCallTwiml(callSid, twimlString) {
   await getClient().calls(callSid).update({ twiml: twimlString });
 }
 
-module.exports = { getClient, VoiceResponse, MessagingResponse, validateTwilio, sendSms, configureNumber, updateCallTwiml };
+module.exports = { getClient, VoiceResponse, MessagingResponse, validateTwilio, sendSms, configureNumber, updateCallTwiml, searchNumbers, listOwnedNumbers, buyNumber };
