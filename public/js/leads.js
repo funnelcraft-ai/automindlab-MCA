@@ -126,7 +126,7 @@ export async function viewCalls() {
           <td class="muted tnum">${esc(dt(c.started_at))}</td>
           <td><div class="who"><div class="avatar av-sm">${esc(initials(c.lead_name))}</div><div><b>${esc(c.lead_name || phone(c.from_number) || 'Unknown')}</b>${c.lead_name ? `<span class="muted small tnum">${esc(phone(c.from_number))}</span>` : ''}</div></div></td>
           ${all ? `<td>${esc(c.tenant_name)}</td>` : ''}
-          <td><span class="tag ${c.path === 'ai' ? 't-ai' : c.path === 'answered' ? 't-ok' : 't-new'}">${esc(label[c.path] || c.path)}</span>${c.textback_sent ? `<div class="muted small" style="margin-top:4px">texted back</div>` : ''}</td>
+          <td><span class="tag ${c.path === 'ai' ? 't-ai' : c.path === 'answered' ? 't-ok' : 't-new'}">${esc(label[c.path] || c.path)}</span>${c.channel === 'web' ? ' <span class="tag plain">web</span>' : ''}${c.textback_sent ? `<div class="muted small" style="margin-top:4px">texted back</div>` : ''}</td>
           <td>${c.outcome ? `<span class="tag ${c.outcome === 'booked' ? 't-booked' : 'plain'}">${esc(c.outcome.replace(/_/g, ' '))}</span>` : '<span class="muted">—</span>'}</td>
           <td><div class="clip" style="max-width:360px">${esc(c.summary || '')}</div></td></tr>`
             )

@@ -411,3 +411,28 @@ audio { width: 100%; margin-top: 10px; height: 36px; }
   .auth-r { display: none; }
   .kpis { grid-template-columns: 1fr 1fr; gap: 10px; }
 }
+
+/* ---------- browser call widget ---------- */
+.wc { text-align: center; }
+.wc-orb-wrap { display: grid; place-items: center; height: 150px; }
+.wc-orb { width: 96px; height: 96px; transition: transform 0.25s, box-shadow 0.25s; }
+.wc-orb.live { animation: none; box-shadow: 0 18px 40px -8px rgba(47,107,255,.7), 0 0 0 14px color-mix(in srgb, var(--blue) 10%, transparent); }
+.wc-orb.talking { animation: pulse 0.9s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { transform: scale(1); box-shadow: 0 18px 40px -8px rgba(47,107,255,.7), 0 0 0 10px color-mix(in srgb, var(--blue) 10%, transparent); } 50% { transform: scale(1.08); box-shadow: 0 18px 40px -8px rgba(47,107,255,.7), 0 0 0 26px color-mix(in srgb, var(--blue) 6%, transparent); } }
+.wc-status { font-size: 17px; font-weight: 650; margin-top: 6px; }
+.wc-sub { margin-top: 4px; min-height: 18px; }
+.wc-btn { height: 42px; padding: 0 20px; border-radius: 99px; }
+.wc-log { text-align: left; margin-top: 16px; display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+.wc-log:empty { display: none; }
+.wc-line { font-size: 13px; padding: 8px 11px; border-radius: 12px; background: var(--panel-2); max-width: 92%; }
+.wc-line.agent { align-self: flex-start; }
+.wc-line.user { align-self: flex-end; background: var(--blue-soft); }
+.wc-line b { font-size: 11px; color: var(--ink-3); display: block; font-weight: 600; }
+.demo-wrap { min-height: 100vh; display: grid; grid-template-columns: 1.1fr 1fr; }
+.demo-l { display: flex; align-items: center; justify-content: center; padding: 40px 24px; }
+.demo-card { width: 100%; max-width: 460px; }
+.demo-card h1 { font-size: 28px; margin: 18px 0 6px; line-height: 1.15; }
+.try { display: flex; flex-direction: column; gap: 10px; margin-top: 24px; }
+.try div { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.15); border-radius: 12px; padding: 12px 14px; font-size: 13.5px; }
+.try b { display: block; font-size: 12px; color: rgba(255,255,255,.7); font-weight: 500; margin-bottom: 2px; }
+@media (max-width: 880px) { .demo-wrap { grid-template-columns: 1fr; } .demo-wrap .auth-r { display: flex; padding: 32px 20px; } .demo-wrap .floating { display: none; } }

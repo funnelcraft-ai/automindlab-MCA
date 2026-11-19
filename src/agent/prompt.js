@@ -91,7 +91,7 @@ function dynamicVariables(tenant, callerPhone, lead) {
     booking_mode: bookingModeText(tenant),
     pricing_notes: tenant.pricing_notes || '',
     emergency_policy: tenant.emergency_policy || '',
-    caller_number_pretty: prettyPhone(callerPhone),
+    caller_number_pretty: callerPhone ? prettyPhone(callerPhone) : 'unknown (web call - ask for their best callback number)',
     known_caller: knownCaller(lead, tenant.timezone),
     extra_instructions: tenant.extra_instructions ? `- Extra instructions: ${tenant.extra_instructions}` : '',
   };

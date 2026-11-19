@@ -14,6 +14,7 @@ const settings = require('../services/settings');
 const integrations = require('../services/integrations');
 const { provisionRetell, newToolSecret } = require('../services/provision');
 const { sendEmail } = require('../services/notify');
+const { startWebCall } = require('../services/webcall');
 
 const router = express.Router();
 router.use(express.json({ limit: '200kb' }));
@@ -140,6 +141,36 @@ router.post(
     await db.logEvent(inv.tenant_id, null, 'invite_accepted', { user: user.id });
     auth.issueSession(res, user);
     res.json({ ok: true });
+  })
+);
+
+// ---- Public live-demo page: prospects talk to a business's agent in the browser ----
+const demoLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 6, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Demo limit reached for now. Try again in an hour.' } });
+
+router.get(
+  '/demo/:slug',
+  h(async (req, res) => {
+    const t = await db.one('SELECT name, industry, agent_name, services, service_area, booking_provider FROM tenants WHERE slug=$1 AND demo_enabled=TRUE', [String(req.params.slug)]);
+    if (!t) return bad(res, 'This demo is not available.', 404);
+    res.json({ ...t, agency: config.agencyName, ready: !!(config.retell.apiKey && config.retell.agentId) });
+  })
+);
+
+router.post(
+  '/demo/:slug/call',
+  demoLimiter,
+  h(async (req, res) => {
+    const t = await db.one('SELECT * FROM tenants WHERE slug=$1 AND demo_enabled=TRUE', [String(req.params.slug)]);
+    if (!t) return bad(res, 'This demo is not available.', 404);
+    const today = await db.one(`SELECT count(*)::int AS n FROM calls WHERE tenant_id=$1 AND channel='web' AND started_at > now() - interval '24 hours'`, [t.id]);
+    if (today.n >= 60) return bad(res, 'This demo is very popular today. Please try again tomorrow.', 429);
+    let phone = null;
+    if (req.body?.phone) {
+      phone = toE164(req.body.phone);
+      if (!phone) return bad(res, 'Enter a valid US/Canada mobile number, or leave it blank.');
+      if (req.body?.consent !== true) return bad(res, 'Please tick the box to agree to receive the demo texts.');
+    }
+    res.json(await startWebCall(t, { phone, source: 'public_demo' }));
   })
 );
 
@@ -271,7 +302,7 @@ const PUBLIC_TENANT_COLS = `id, name, slug, industry, timezone, active, twilio_n
   avg_job_value, booking_provider, booking_link, slot_minutes, min_lead_minutes, booking_days_ahead, google_calendar_id,
   (google_tokens_enc IS NOT NULL) AS google_connected, calcom_base_url, (calcom_api_key_enc IS NOT NULL) AS calcom_key_set,
   calcom_event_type_id, sms_enabled, sms_ai_enabled, textback_template, notify_phones, notify_emails, onboarding_step, website,
-  owner_name, owner_email, owner_phone, go_live_at, created_at`;
+  owner_name, owner_email, owner_phone, go_live_at, demo_enabled, created_at`;
 
 const CLIENT_EDITABLE = [
   'agent_name', 'services', 'service_area', 'business_hours', 'emergency_policy', 'pricing_notes', 'extra_instructions', 'avg_job_value',
@@ -279,7 +310,7 @@ const CLIENT_EDITABLE = [
   'calcom_event_type_id', 'sms_ai_enabled', 'textback_template', 'notify_phones', 'notify_emails', 'ring_timeout_sec', 'transfer_number',
   'website', 'owner_name', 'owner_email', 'owner_phone',
 ];
-const ADMIN_EDITABLE = [...CLIENT_EDITABLE, 'name', 'industry', 'timezone', 'mode', 'ring_number', 'messaging_service_sid', 'voice_id', 'sms_enabled', 'onboarding_step'];
+const ADMIN_EDITABLE = [...CLIENT_EDITABLE, 'name', 'industry', 'timezone', 'mode', 'ring_number', 'messaging_service_sid', 'voice_id', 'sms_enabled', 'onboarding_step', 'demo_enabled'];
 const PHONE_FIELDS = ['ring_number', 'transfer_number', 'owner_phone'];
 const LIMITS = { slot_minutes: [15, 480], min_lead_minutes: [0, 10080], booking_days_ahead: [1, 60], ring_timeout_sec: [5, 60], avg_job_value: [0, 1000000], onboarding_step: [1, 6] };
 
@@ -321,7 +352,7 @@ function validateTenantField(k, v) {
     }
     return { v: out };
   }
-  if (k === 'sms_enabled' || k === 'sms_ai_enabled') return { v: !!v };
+  if (k === 'sms_enabled' || k === 'sms_ai_enabled' || k === 'demo_enabled') return { v: !!v };
   if (k === 'mode' && !['forward', 'ring_first'].includes(v)) return { err: 'Invalid routing mode' };
   if (k === 'booking_provider' && !['none', 'google', 'calcom', 'link'].includes(v)) return { err: 'Invalid booking method' };
   if (k === 'timezone' && !/^[A-Za-z_]+\/[A-Za-z_]+$/.test(v)) return { err: 'Invalid time zone' };
@@ -625,6 +656,19 @@ router.post(
   })
 );
 
+// Talk to this business's agent from the dashboard (test before go-live, or demo on a sales call).
+router.post(
+  '/tenants/:id/web-call',
+  actionLimiter,
+  h(async (req, res) => {
+    const tenant = await loadTenant(req);
+    if (!tenant) return bad(res, 'Not found', 404);
+    const phone = req.body?.phone ? toE164(req.body.phone) : null;
+    if (req.body?.phone && !phone) return bad(res, 'Enter a valid US/Canada mobile number, or leave it blank.');
+    res.json(await startWebCall(tenant, { phone, source: 'dashboard' }));
+  })
+);
+
 router.get(
   '/tenants/:id/availability',
   h(async (req, res) => {
@@ -730,7 +774,7 @@ router.get(
     const rows = await db.many(
       `SELECT e.id, e.type, e.data, e.created_at, e.lead_id, l.name AS lead_name, l.phone, t.name AS tenant_name
        FROM events e LEFT JOIN leads l ON l.id=e.lead_id LEFT JOIN tenants t ON t.id=e.tenant_id
-       WHERE e.type IN ('appointment_booked','emergency_escalated','call_analyzed','opted_out','went_live','textback_sent')
+       WHERE e.type IN ('appointment_booked','emergency_escalated','call_analyzed','opted_out','went_live','textback_sent','web_call_started')
          ${tid ? 'AND e.tenant_id=$1' : ''} ORDER BY e.created_at DESC LIMIT 15`,
       tid ? [tid] : []
     );
@@ -865,7 +909,7 @@ router.get(
   h(async (req, res) => {
     const tid = tenantScope(req);
     const rows = await db.many(
-      `SELECT c.id, c.tenant_id, t.name AS tenant_name, c.lead_id, l.name AS lead_name, c.from_number, c.path, c.outcome,
+      `SELECT c.id, c.tenant_id, t.name AS tenant_name, c.lead_id, l.name AS lead_name, c.from_number, c.path, c.outcome, c.channel,
          c.summary, c.duration_sec, c.textback_sent, c.started_at
        FROM calls c JOIN tenants t ON t.id=c.tenant_id LEFT JOIN leads l ON l.id=c.lead_id
        ${tid ? 'WHERE c.tenant_id=$1' : ''} ORDER BY c.started_at DESC LIMIT 300`,

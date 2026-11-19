@@ -38,7 +38,9 @@ async function onCallAnalyzed(call, c) {
     outcome,
   ]);
 
-  const phone = toE164(call.from_number);
+  // Web calls without a number: use the callback number the caller gave the agent, if any.
+  let phone = toE164(call.from_number);
+  if (!phone && call.lead_id) phone = (await db.one('SELECT phone FROM leads WHERE id=$1', [call.lead_id]))?.phone || null;
   if (!phone) return; // anonymous caller: nothing to text
   const lead = await leads.upsertLead(tenant.id, phone, {
     name: data.caller_name || undefined,
@@ -120,9 +122,12 @@ router.post('/tools/:name', async (req, res) => {
       case 'check_availability':
         out = await actions.checkAvailability(tenant, args);
         break;
-      case 'book_appointment':
-        out = (await actions.bookAppointment(tenant, phone, args, 'voice')).result;
+      case 'book_appointment': {
+        const r = await actions.bookAppointment(tenant, phone, args, 'voice');
+        if (r.lead) await db.query('UPDATE calls SET lead_id=$2 WHERE id=$1 AND lead_id IS NULL', [call.id, r.lead.id]);
+        out = r.result;
         break;
+      }
       case 'save_lead_details': {
         const r = await actions.saveLeadDetails(tenant, phone, args, 'voice');
         await db.query('UPDATE calls SET lead_id=$2 WHERE id=$1', [call.id, r.lead.id]);
@@ -132,9 +137,11 @@ router.post('/tools/:name', async (req, res) => {
       case 'send_booking_link':
         out = (await actions.sendBookingLink(tenant, phone)).result;
         break;
-      case 'escalate_emergency':
-        out = (await actions.escalateEmergency(tenant, call, phone, args)).result;
+      case 'escalate_emergency': {
+        const r = await actions.escalateEmergency(tenant, call, phone, args);
+        out = r.result;
         break;
+      }
       default:
         return res.status(404).json({ error: 'unknown tool' });
     }

@@ -387,6 +387,49 @@ async function main() {
   ok('account locks after 5 failed sign-ins');
   cookie = adminCookie;
 
+  console.log('Live demo: browser calls');
+  r = await req('POST', `/api/tenants/${tid}/web-call`, { body: {} });
+  assert.equal(r.status, 200, r.text);
+  assert.ok(r.json.accessToken && r.json.callId && r.json.transport);
+  const webRow = await db.one('SELECT * FROM calls WHERE retell_call_id=$1', [r.json.callId]);
+  assert.equal(webRow.channel, 'web');
+  const rcw = { call_id: r.json.callId };
+  r = await retell('/retell/tools/save_lead_details', { call: rcw, args: { name: 'Web Tester' } });
+  assert.match(r.json.instructions || '', /callback number/i);
+  r = await retell('/retell/tools/save_lead_details', { call: rcw, args: { name: 'Web Tester', issue: 'AC not cooling', callback_number: '(469) 555-0199' } });
+  assert.deepEqual(r.json, { saved: true });
+  await retell('/retell/webhook', {
+    event: 'call_analyzed',
+    call: { ...rcw, duration_ms: 80000, call_analysis: { call_summary: 'Web demo caller with AC issue wants a callback.', custom_analysis_data: { lead_outcome: 'callback_requested', caller_name: 'Web Tester' } } },
+  });
+  await wait(300);
+  const webLead = await db.one("SELECT * FROM leads WHERE phone='+14695550199'");
+  assert.equal(webLead.name, 'Web Tester');
+  assert.ok(await db.one("SELECT 1 FROM messages WHERE lead_id=$1 AND body LIKE 'Thanks for calling%'", [webLead.id]), 'follow-up texted to the callback number');
+  ok('dashboard web call: tools, callback number, analysis and follow-up text all work');
+
+  const slug = (await db.one('SELECT slug FROM tenants WHERE id=$1', [tid])).slug;
+  cookie = '';
+  r = await req('GET', `/api/demo/${slug}`);
+  assert.equal(r.status, 404, 'demo page is off by default');
+  cookie = adminCookie;
+  await req('PUT', `/api/tenants/${tid}`, { body: { demo_enabled: true } });
+  cookie = '';
+  r = await req('GET', `/api/demo/${slug}`);
+  assert.equal(r.json.name, 'Lone Star Heating & Air');
+  assert.ok(!('twilio_number' in r.json) && !('notify_phones' in r.json), 'public page exposes no private details');
+  r = await req('POST', `/api/demo/${slug}/call`, { body: { phone: '(214) 555-0111' } });
+  assert.equal(r.status, 400, 'texting needs explicit consent');
+  r = await req('POST', `/api/demo/${slug}/call`, { body: { phone: '(214) 555-0111', consent: true } });
+  assert.equal(r.status, 200);
+  assert.ok(r.json.accessToken);
+  r = await req('POST', `/api/demo/${slug}/call`, { body: {}, csrf: false });
+  assert.equal(r.status, 403, 'public demo still requires the CSRF header');
+  for (let i = 0; i < 6; i++) r = await req('POST', `/api/demo/${slug}/call`, { body: {} });
+  assert.equal(r.status, 429, 'public demo is rate limited');
+  ok('public demo page: off by default, consent for texts, CSRF, rate limited');
+  cookie = adminCookie;
+
   // static + health
   r = await req('GET', '/health');
   assert.equal(r.json.ok, true);

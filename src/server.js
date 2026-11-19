@@ -24,12 +24,12 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'same-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader(
     'Content-Security-Policy',
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; " +
-      "media-src 'self' https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+      "media-src 'self' https: blob: mediastream:; connect-src 'self' https://api.retellai.com wss://api.retellai.com https://*.retellai.com wss://*.retellai.com https://*.livekit.cloud wss://*.livekit.cloud; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
   );
   if (req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   next();

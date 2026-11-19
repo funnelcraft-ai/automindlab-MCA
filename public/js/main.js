@@ -3,7 +3,7 @@ import { shell, isAdmin, setTenant } from './shell.js';
 import { viewDashboard } from './dashboard.js';
 import { viewLeads, viewLead, viewCalls } from './leads.js';
 import { viewBusinesses, viewBusiness } from './business.js';
-import { viewLogin, viewSetup, viewInvite, viewIntegrations, viewAccount, viewHelp } from './admin.js';
+import { viewLogin, viewSetup, viewInvite, viewIntegrations, viewAccount, viewHelp, viewDemo } from './admin.js';
 
 export async function reloadTenants() {
   state.tenants = await api('/tenants');
@@ -55,6 +55,7 @@ async function route() {
   const [path, qs] = (location.hash.slice(1) || '/').split('?');
   const params = new URLSearchParams(qs || '');
   if (path.startsWith('/invite/')) return viewInvite(path.slice(8));
+  if (path.startsWith('/demo/')) return viewDemo(path.slice(6));
   if (path === '/login' || path === '/setup' || !state.me) {
     let status = { needsSetup: false };
     try {
@@ -91,6 +92,43 @@ async function route() {
     if (state.me) shell('', `<div class="card empty">${icon('alert', 26)}<div>Something went wrong: ${esc(e.message)}</div><div style="margin-top:12px"><a class="btn" href="#/">Back to dashboard</a></div></div>`);
   }
 }
+
+// Live updates: new bookings, calls and emergencies pop up without refreshing (great during live demos).
+const LIVE_TEXT = {
+  appointment_booked: (n) => `New job booked${n.lead_name ? ' for ' + n.lead_name : ''}`,
+  emergency_escalated: (n) => `Emergency call${n.lead_name ? ' from ' + n.lead_name : ''}`,
+  call_analyzed: (n) => `AI finished a call${n.lead_name ? ' with ' + n.lead_name : ''}`,
+  textback_sent: (n) => `Text-back sent${n.lead_name ? ' to ' + n.lead_name : ''}`,
+  web_call_started: () => 'Web call started',
+};
+let lastNoteId = null;
+async function pollLive() {
+  if (!state.me || document.hidden) return;
+  try {
+    const notes = await api('/notifications' + (state.tenantId ? '?tenant=' + state.tenantId : ''));
+    const newest = notes[0]?.id || 0;
+    if (lastNoteId === null) {
+      lastNoteId = newest;
+      return;
+    }
+    if (newest > lastNoteId) {
+      const fresh = notes.filter((n) => n.id > lastNoteId);
+      lastNoteId = newest;
+      const top = fresh.find((n) => LIVE_TEXT[n.type]);
+      if (top) {
+        const { toast } = await import('./lib.js');
+        toast(LIVE_TEXT[top.type](top));
+      }
+      state.unread = true;
+      const bell = document.getElementById('bellBtn');
+      if (bell && !bell.querySelector('.dot')) bell.insertAdjacentHTML('beforeend', '<span class="dot"></span>');
+      const [path] = (location.hash.slice(1) || '/').split('?');
+      const busyUi = document.querySelector('.overlay, .drawer') || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+      if (!busyUi && ['/', '/leads', '/calls'].includes(path)) route();
+    }
+  } catch {}
+}
+setInterval(pollLive, 8000);
 
 window.addEventListener('hashchange', route);
 route();

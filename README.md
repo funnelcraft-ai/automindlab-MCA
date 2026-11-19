@@ -94,10 +94,25 @@ cp .env.example .env    # DATABASE_URL + APP_ENCRYPTION_KEY; add DRY_RUN=true to
 npm install
 npm start               # setup code prints in the console
 npm run seed:demo       # adds "Lone Star Heating & Air" with 45 days of realistic calls, leads and bookings (great for sales demos)
-npm test                # 28 end-to-end checks (needs a throwaway Postgres DB; it DROPS the public schema)
+npm test                # 30 end-to-end checks (needs a throwaway Postgres DB; it DROPS the public schema)
 ```
 
 The tests cover first-run setup, CSRF/origin blocking, security headers, encrypted key storage and masking, voice-agent provisioning, input validation, number purchase confirmation, test mode, the go-live checklist, hashed single-use invites, client isolation, session revocation, account lockout, and every call/SMS flow (AI conversation, SMS AI, STOP, ring-first hang-up, Cal.com booking, early hang-up, spam).
+
+## 6. Live demos (no phone line needed)
+
+Prospects can talk to an agent **in their browser**: a real Retell voice conversation using their microphone. Bookings, texts, leads, transcripts and alerts all run exactly as on a phone call.
+
+**Minimum keys:** Retell (+ "Create voice agent"). Add Twilio only if you want the demo to send real texts (trial accounts can text your own verified number). Add an SMS AI key for AI text replies. The **Gemini (free tier)** preset on the SMS AI card fills in the settings for you.
+
+**Three ways to use it**
+- **On a sales call (screen share):** open a business, then **Talk to the agent**. Play the customer, end the call, and switch to the Dashboard. A live toast announces the booking, and the lead, summary and transcript appear without a refresh.
+- **Send prospects a link:** a business page → **Test & go live** → turn on **Live demo page** and copy the link (`/#/demo/<business>`). It's public and needs no login. It's rate-limited (6 calls/hour per visitor, 60/day per business), and texts are only sent if the visitor enters a number and ticks consent.
+- **Your own showcase:** run `npm run seed:demo`, turn on the demo page for "Lone Star Heating & Air", and use that link on automindlab.io/hvac-demo.
+
+**Suggested 5-minute demo:** (1) show the dashboard with demo data; (2) click Talk to the agent: "My AC is blowing warm air, can someone come tomorrow?", give a name and address, accept a slot; (3) end the call, watch the "New job booked" toast and open the lead (summary, transcript, booking, text thread); (4) call again: "I smell gas", to show the safety script and the emergency alert; (5) open Test & go live to show how a new business gets onboarded.
+
+Browser calls need HTTPS (Railway's domain is fine) and microphone permission. The browser SDK is bundled locally in `public/vendor/retell-web.js` (rebuild with `npm run build:vendor` after upgrading `retell-client-js-sdk`).
 
 ## Compliance notes (not legal advice; have counsel review before launch)
 

@@ -88,7 +88,7 @@ export async function viewBusiness(id, params) {
     `<div class="ph"><div>${adm ? `<a href="#/businesses" class="small">${icon('chevronLeft', 13)} Businesses</a>` : ''}
         <div class="row" style="margin-top:4px"><h1>${esc(t.name)}</h1>${status}</div>
         <div class="sub">${onboarding ? `Onboarding · step ${idx + 1} of 6` : esc(t.industry) + (t.twilio_number ? ' · ' + esc(phone(t.twilio_number)) : '')}</div></div>
-      <div class="actions">${params.get('google') ? `<span class="tag t-ok">Google Calendar connected</span>` : ''}</div></div>
+      <div class="actions">${params.get('google') ? `<span class="tag t-ok">Google Calendar connected</span>` : ''}<button class="btn" id="talkBtn">${icon('mic', 15)} Talk to the agent</button></div></div>
     ${onboarding ? `<div class="progress" style="margin:-6px 0 18px"><i style="width:${Math.round(((maxStep - 1) / 6) * 100)}%"></i></div>` : ''}
     <div class="wiz">
       <div class="card steps" style="padding:8px">${STEPS.map(
@@ -98,6 +98,7 @@ export async function viewBusiness(id, params) {
       <div class="card" id="stepCard"></div></div>`
   );
 
+  $('#talkBtn').onclick = () => openCallModal(t);
   const card = $('#stepCard');
   const ctx = { t, id, adm, onboarding, key, idx, card, reload: () => viewBusiness(id, new URLSearchParams(`step=${key}`)) };
   await SECTIONS[key](ctx);
@@ -297,6 +298,10 @@ const SECTIONS = {
         <div><h3>Launch checklist</h3><div class="checklist" id="ckl">${ckHtml(ck.items)}</div></div>
         <div><h3>1. Test call</h3><p class="muted small" style="margin-top:6px">From ${t.owner_phone ? esc(phone(t.owner_phone)) : 'an owner/alert phone'}, call <b class="tnum">${t.twilio_number ? esc(phone(t.twilio_number)) : 'the agent number'}</b>. Pretend you're a customer with a broken AC.</p>
           <div class="inner row" id="callWatch" style="gap:10px">${icon('phone', 16)} <span class="muted">Waiting for a test call…</span></div>
+          <div class="row" style="margin-top:8px"><span class="muted small">No phone handy?</span><button class="btn xs" id="browserTest">${icon('mic', 12)} Talk to it in your browser</button></div>
+          ${adm ? `<h3 style="margin-top:20px">Live demo page</h3><p class="muted small" style="margin-top:6px">A public page where prospects talk to this agent in their browser. Rate-limited, no login needed.</p>
+          <label class="check" style="margin-top:8px"><span class="switch"><input type="checkbox" id="demoToggle" ${t.demo_enabled ? 'checked' : ''}/><span></span></span><div><b>Demo page ${t.demo_enabled ? 'on' : 'off'}</b></div></label>
+          ${t.demo_enabled ? `<div class="copybox" style="margin-top:8px"><code>${esc(location.origin + '/#/demo/' + t.slug)}</code><button class="btn xs" data-copy="${esc(location.origin + '/#/demo/' + t.slug)}">${icon('copy', 12)}</button><a class="btn xs" href="/#/demo/${esc(t.slug)}" target="_blank" rel="noopener">${icon('external', 12)}</a></div>` : ''}` : ''}
           <h3 style="margin-top:20px">2. Forward missed calls</h3>
           ${t.twilio_number ? (t.mode === 'ring_first' ? `<p class="muted small" style="margin-top:6px">Ring-first mode: publish <b>${esc(phone(t.twilio_number))}</b> on the website, Google Business Profile and ads. No forwarding needed.</p>` : `<p class="muted small" style="margin-top:6px">On the business line, turn on <b>no-answer / busy</b> forwarding to the agent number. Common codes (confirm with the carrier):</p>
           <div class="codes">${[
@@ -308,6 +313,14 @@ const SECTIONS = {
             .join('')}</div>`) : '<p class="muted small">Assign a number first.</p>'}
           ${adm ? `<h3 style="margin-top:20px">3. Invite the owner</h3><div id="team"></div>` : ''}</div></div>`;
     $$('[data-copy]', card).forEach((b) => (b.onclick = () => copyText(b.dataset.copy)));
+    $('#browserTest').onclick = () => openCallModal(t);
+    if ($('#demoToggle'))
+      $('#demoToggle').onchange = (e) =>
+        busy(e.target, async () => {
+          await api('/tenants/' + id, { method: 'PUT', body: { demo_enabled: e.target.checked } });
+          toast(e.target.checked ? 'Demo page is live' : 'Demo page turned off');
+          ctx.reload();
+        });
     if ($('#golive'))
       $('#golive').onclick = (e) =>
         modal({
@@ -449,4 +462,31 @@ async function renderTeam(el, t) {
     $$('[data-rv]', el).forEach((b) => (b.onclick = () => busy(b, async () => (await api(`/invites/${b.dataset.rv}`, { method: 'DELETE' }), draw()))));
   };
   draw().catch((e) => (el.textContent = e.message));
+}
+
+// ---- talk to the agent in the browser ----
+export async function openCallModal(t) {
+  const { mountWebCall } = await import('./webcall.js');
+  let widget = null;
+  const m = modal({
+    title: `Talk to ${t.name}'s agent`,
+    confirm: 'Done',
+    cancel: 'Close',
+    body: `<div id="wcm"></div><label class="f">Text the summary & confirmation to (optional)</label><input class="in" id="wcPhone" type="tel" placeholder="Your mobile" value="${esc(t.owner_phone ? phone(t.owner_phone) : '')}" />
+      <div class="hint">Leave blank to skip texts. Everything else (lead, transcript, booking, alerts) works the same as a phone call.</div>`,
+    onConfirm: () => widget?.end(),
+  });
+  // Any way of closing the dialog also hangs up.
+  m.querySelectorAll('[data-x]').forEach((b) => b.addEventListener('click', () => widget?.end()));
+  m.addEventListener('click', (e) => e.target === m && widget?.end());
+  const onKey = (e) => {
+    if (e.key === 'Escape') widget?.end();
+    if (!document.body.contains(m)) document.removeEventListener('keydown', onKey);
+  };
+  document.addEventListener('keydown', onKey);
+  widget = mountWebCall(m.querySelector('#wcm'), {
+    business: t.name,
+    agentName: t.agent_name,
+    start: () => api(`/tenants/${t.id}/web-call`, { method: 'POST', body: m.querySelector('#wcPhone').value.trim() ? { phone: m.querySelector('#wcPhone').value.trim() } : {} }),
+  });
 }

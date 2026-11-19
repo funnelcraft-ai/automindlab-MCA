@@ -55,7 +55,7 @@ export async function api(path, { method = 'GET', body } = {}) {
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const r = await fetch('/api' + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined, credentials: 'same-origin' });
   const j = await r.json().catch(() => ({}));
-  if (r.status === 401 && !['/login', '/setup', '/me/password'].includes(path) && !path.startsWith('/invite')) {
+  if (r.status === 401 && !['/login', '/setup', '/me/password'].includes(path) && !path.startsWith('/invite') && !path.startsWith('/demo')) {
     state.me = null;
     if (!location.hash.startsWith('#/login')) location.hash = '#/login';
     throw new ApiError('Please sign in');

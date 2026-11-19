@@ -130,6 +130,13 @@ const PROVIDERS = [
   },
 ];
 
+const LLM_PRESETS = [
+  { label: 'Gemini (free tier)', base: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.6-flash', key: 'Gemini API key from aistudio.google.com' },
+  { label: 'OpenAI', base: 'https://api.openai.com/v1', model: 'gpt-4.1-mini', key: 'sk-…' },
+  { label: 'Groq', base: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', key: 'gsk_…' },
+  { label: 'OpenRouter', base: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4.1-mini', key: 'sk-or-…' },
+];
+
 export async function viewIntegrations(params) {
   const d = await api('/integrations');
   const S = d.settings;
@@ -158,6 +165,7 @@ export async function viewIntegrations(params) {
             return `<label class="f">${esc(label)}${env}</label><input class="in" name="${k}" value="${esc(s.value ?? '')}" placeholder="${esc(ph)}" spellcheck="false" ${s.fromEnv ? 'disabled' : ''} />`;
           })
           .join('')}
+        ${p.id === 'llm' ? `<div class="row" style="margin-top:10px;gap:6px"><span class="muted small">Presets:</span>${LLM_PRESETS.map((x, i) => `<button type="button" class="btn xs" data-preset="${i}">${esc(x.label)}</button>`).join('')}</div>` : ''}
         ${p.id === 'app' ? `<div class="hint">Webhooks this app exposes:</div><div class="copybox" style="margin-top:6px"><code>${esc(d.webhooks.voice)}</code><button type="button" class="btn xs" data-copy="${esc(d.webhooks.voice)}">${icon('copy', 12)}</button></div>` : ''}
         ${p.id === 'google' ? `<div class="hint">Authorized redirect URI:</div><div class="copybox" style="margin-top:6px"><code>${esc(d.webhooks.googleRedirect)}</code><button type="button" class="btn xs" data-copy="${esc(d.webhooks.googleRedirect)}">${icon('copy', 12)}</button></div>` : ''}
         ${p.id === 'twilio' && S.twilio_messaging_service_sid?.set ? `<div class="hint">Set the Messaging Service's incoming webhook to <b>${esc(d.webhooks.sms)}</b></div>` : ''}
@@ -168,6 +176,18 @@ export async function viewIntegrations(params) {
     }).join('')}</div>`
   );
   $$('[data-copy]', content).forEach((b) => (b.onclick = () => copyText(b.dataset.copy)));
+  $$('[data-preset]', content).forEach(
+    (b) =>
+      (b.onclick = () => {
+        const x = LLM_PRESETS[Number(b.dataset.preset)];
+        const f = b.closest('form');
+        f.elements.llm_base_url.value = x.base;
+        f.elements.llm_model.value = x.model;
+        f.elements.llm_api_key.placeholder = x.key;
+        f.elements.llm_api_key.focus();
+        toast(`${x.label} selected - paste its key, then Save & test`);
+      })
+  );
   $$('form[data-p]', content).forEach((form) => {
     const p = PROVIDERS.find((x) => x.id === form.dataset.p);
     form.onsubmit = (e) => {
@@ -269,4 +289,56 @@ export function viewHelp() {
         <details><summary>Is the call recorded?</summary><p class="muted small" style="margin-top:6px">Yes. The greeting says so, which covers states that require all-party consent. Recordings and transcripts appear on each lead.</p></details>
         ${state.me.role === 'admin' ? '' : `<p class="small" style="margin-top:14px">Need a change you can't make here? Contact ${esc(state.agency)}.</p>`}</div></div>`
   );
+}
+
+// ---------------- public live-demo page (no login) ----------------
+export async function viewDemo(slug) {
+  const { mountWebCall } = await import('./webcall.js');
+  const app = document.getElementById('app');
+  let d;
+  try {
+    d = await api('/demo/' + encodeURIComponent(slug));
+  } catch (e) {
+    app.innerHTML = `<div class="auth"><div class="auth-l"><div class="auth-card"><h1>Demo unavailable</h1><p class="muted">${esc(e.message)}</p></div></div><div class="auth-r"></div></div>`;
+    return;
+  }
+  document.title = `Talk to ${d.name}'s AI receptionist`;
+  app.innerHTML = `<div class="demo-wrap">
+    <div class="demo-l"><div class="demo-card">
+      <div class="brand-n">${icon('logo', 22)} ${esc(d.agency)}</div>
+      <h1>Call ${esc(d.name)}'s AI receptionist</h1>
+      <p class="muted">This is the agent that answers when the team can't pick up. Talk to it like a customer would: it will help, book a visit and text you a confirmation.</p>
+      <div class="card" style="margin-top:18px">
+        ${d.ready ? '<div id="wc"></div>' : '<div class="empty">The demo agent is being set up. Please check back soon.</div>'}
+        <details style="margin-top:12px"><summary>Get the text messages too (optional)</summary>
+          <label class="f">Your US/Canada mobile</label><input class="in" id="dPhone" type="tel" placeholder="(512) 555-0123" autocomplete="tel" />
+          <label class="check"><input type="checkbox" id="dConsent" /> <span class="small">I agree to receive demo texts about this call from ${esc(d.name)}. Msg & data rates may apply. Reply STOP to opt out.</span></label></details>
+        <div class="err-t" id="dErr"></div>
+      </div>
+      <p class="hint" style="margin-top:12px">Calls are recorded and handled by an AI assistant.</p></div></div>
+    <div class="auth-r"><div class="floating">
+      <div class="fc"><div class="row" style="gap:8px">${icon('bot', 16)}<b>Answers in 1 ring, 24/7</b></div><div class="muted" style="margin-top:6px">${esc(d.services || '').slice(0, 90)}</div></div>
+      <div class="fc"><div class="row" style="gap:8px;color:var(--green)">${icon('calendarCheck', 16)}<b style="color:var(--ink)">Books the job · texts the caller</b></div><div class="muted" style="margin-top:6px">Owner alerted with a summary</div></div></div>
+      <h2>Things to try</h2>
+      <div class="try">
+        <div><b>A routine job</b>"Hi, I'd like to schedule an AC tune-up next week."</div>
+        <div><b>Something urgent</b>"My furnace stopped working and it's freezing in here."</div>
+        <div><b>A safety emergency</b>"I smell gas near my water heater."</div>
+        <div><b>Just a question</b>"Do you service ${esc((d.service_area || 'my area').split(',')[0])}? What are your hours?"</div>
+      </div></div></div>`;
+  if (!d.ready) return;
+  mountWebCall(document.getElementById('wc'), {
+    business: d.name,
+    agentName: d.agent_name,
+    start: async () => {
+      document.getElementById('dErr').textContent = '';
+      const phoneVal = document.getElementById('dPhone').value.trim();
+      try {
+        return await api(`/demo/${encodeURIComponent(slug)}/call`, { method: 'POST', body: phoneVal ? { phone: phoneVal, consent: document.getElementById('dConsent').checked } : {} });
+      } catch (e) {
+        document.getElementById('dErr').textContent = e.message;
+        throw e;
+      }
+    },
+  });
 }

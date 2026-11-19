@@ -64,8 +64,16 @@ async function registerPhoneCall({ agentId, from, to, metadata, dynamicVariables
   return getClient().call.registerPhoneCall(params);
 }
 
+// Browser call (no phone line needed). The API key stays on the server; the browser only gets a short-lived token.
+async function createWebCall({ agentId, metadata, dynamicVariables, voiceId }) {
+  const params = { agent_id: agentId, agent_version: config.retell.agentVersion, metadata, retell_llm_dynamic_variables: dynamicVariables };
+  if (voiceId) params.agent_override = { agent: { voice_id: voiceId } };
+  if (config.dryRun) return { call_id: 'web_dry_' + Date.now(), access_token: 'dry-token', transport: 'gateway', ice_servers: [] };
+  return getClient().call.createWebCall(params);
+}
+
 function sipUri(callId) {
   return `sip:${callId}@${config.retell.sipDomain}`;
 }
 
-module.exports = { getClient, verifySignature, retellAuth, registerPhoneCall, sipUri };
+module.exports = { getClient, verifySignature, retellAuth, registerPhoneCall, createWebCall, sipUri };

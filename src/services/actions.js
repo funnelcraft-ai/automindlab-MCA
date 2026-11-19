@@ -89,10 +89,11 @@ async function sendBookingLink(tenant, phone) {
 // Voice only: flag an emergency to the owner and, if a transfer number exists, move the live call to it.
 async function escalateEmergency(tenant, call, phone, args) {
   const { lead } = await saveLeadDetails(tenant, phone, { ...args, urgency: 'emergency' }, 'voice');
+  if (call?.id) await db.query('UPDATE calls SET lead_id=$2 WHERE id=$1 AND lead_id IS NULL', [call.id, lead.id]);
   await notifyOwner(tenant, lead, 'emergency', { summary: clean(args.issue, 300) });
   await db.logEvent(tenant.id, lead.id, 'emergency_escalated', { callSid: call?.twilio_call_sid });
   const target = toE164(tenant.transfer_number);
-  if (!target || !call?.twilio_call_sid) {
+  if (!target || !call?.twilio_call_sid || !call.twilio_call_sid.startsWith('CA')) {
     return { result: { transferred: false, instructions: 'The on-call technician has been alerted by text and will call back shortly. Give any safety advice from your instructions, then wrap up.' } };
   }
   const vr = new VoiceResponse();
