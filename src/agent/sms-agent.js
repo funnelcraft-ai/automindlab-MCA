@@ -14,6 +14,11 @@ function toolDefs() {
   }));
 }
 
+// Gemini 3 always "thinks"; low effort keeps SMS replies fast. Other providers get no extra params.
+function llmExtras() {
+  return /generativelanguage\.googleapis\.com/.test(config.llm.baseUrl) ? { reasoning_effort: 'low' } : {};
+}
+
 async function chat(messages) {
   if (config.dryRun && !config.llm.apiKey) {
     return { role: 'assistant', content: 'Thanks for reaching out! What seems to be the problem, and what is the service address?' };
@@ -21,7 +26,7 @@ async function chat(messages) {
   const r = await fetch(`${config.llm.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${config.llm.apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: config.llm.model, messages, tools: toolDefs(), temperature: 0.3 }),
+    body: JSON.stringify({ model: config.llm.model, messages, tools: toolDefs(), temperature: 0.3, ...llmExtras() }),
   });
   const j = await r.json();
   if (!r.ok) throw new Error(`LLM error ${r.status}: ${j.error?.message || JSON.stringify(j).slice(0, 200)}`);
@@ -81,4 +86,4 @@ async function replyToLead(tenant, lead) {
   return null;
 }
 
-module.exports = { replyToLead };
+module.exports = { replyToLead, llmExtras };

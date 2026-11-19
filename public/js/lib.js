@@ -124,6 +124,11 @@ const P = {
   card: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',
   logo: '<path d="M12 2 3 7v10l9 5 9-5V7z" fill="currentColor" stroke="none" opacity=".18"/><path d="M12 2 3 7l9 5 9-5zM3 17l9 5 9-5M12 12v10"/>',
 };
+// Agency logo (light + dark variants; CSS shows the right one for the theme).
+export function brandLogo(height = 30, alt = 'Automindlab') {
+  return `<span class="brand-logo" style="--h:${height}px"><img class="logo-l" src="/brand/logo-light-sm.png" alt="${esc(alt)}" height="${height}" /><img class="logo-d" src="/brand/logo-dark-sm.png" alt="" aria-hidden="true" height="${height}" /></span>`;
+}
+
 export function icon(name, size = 16, cls = '') {
   return `<svg class="ic ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || ''}</svg>`;
 }

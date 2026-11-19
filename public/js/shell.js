@@ -1,5 +1,5 @@
 // App frame: sidebar, top bar, notifications, theme, search.
-import { state, esc, icon, api, $, $$, initials, ago, phone } from './lib.js';
+import { state, esc, icon, api, $, $$, initials, ago, phone, brandLogo } from './lib.js';
 
 export const isAdmin = () => state.me?.role === 'admin';
 export const scopeQS = () => (state.tenantId ? `tenant=${state.tenantId}` : '');
@@ -34,7 +34,8 @@ export function shell(active, inner) {
     : `<div class="promo"><div class="pi">${icon('shield', 16)}</div><b>Your AI receptionist</b><p>Every missed call is answered, texted back and logged here.</p><a class="btn sm" href="#/businesses/${mine}">View setup</a></div>`;
   app.innerHTML = `<div class="shell">
     <aside class="side" id="side">
-      <div class="brand"><span class="brand-n">${icon('logo', 22)} ${esc(state.agency || 'Missed Call Agent')}</span></div>
+      <div class="brand"><a href="#/" class="brand-n" aria-label="${esc(state.agency || 'Automindlab')} home">${brandLogo(34, state.agency)}</a></div>
+      <div class="brand-sub">Missed Call Agent</div>
       ${picker}
       <nav class="nav" aria-label="Main">
         ${nav.map(([h, l, ic, k, extra]) => `<a href="${h}" class="${k === active ? 'on' : ''}">${icon(ic)} ${l}${extra || ''}</a>`).join('')}

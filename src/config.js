@@ -50,9 +50,9 @@ const config = {
     toolSecret: env.RETELL_TOOL_SECRET || '',
   },
   llm: {
-    baseUrl: (env.LLM_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, ''),
+    baseUrl: (env.LLM_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai').replace(/\/$/, ''),
     apiKey: env.LLM_API_KEY || '',
-    model: env.LLM_MODEL || 'gpt-4.1-mini',
+    model: env.LLM_MODEL || 'gemini-3.8-flash',
     maxAiRepliesPerDay: Number(env.SMS_MAX_AI_REPLIES_PER_DAY || 15),
   },
   google: {

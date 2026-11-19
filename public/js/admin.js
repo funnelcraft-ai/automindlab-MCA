@@ -1,11 +1,11 @@
-import { state, esc, icon, api, $, $$, toast, busy, copyText, formData, pwStrength } from './lib.js';
+import { state, esc, icon, api, $, $$, toast, busy, copyText, formData, pwStrength, brandLogo } from './lib.js';
 import { shell } from './shell.js';
 import { boot } from './main.js';
 
 // ---------------- auth layout ----------------
 function authLayout(inner) {
   document.getElementById('app').innerHTML = `<div class="auth"><div class="auth-l"><div class="auth-card">
-      <div class="brand-n">${icon('logo', 24)} ${esc(state.agency || 'Missed Call Agent')}</div>${inner}</div></div>
+      <div class="brand-n">${brandLogo(40, state.agency)}</div>${inner}</div></div>
     <div class="auth-r"><div class="floating">
       <div class="fc"><div class="row" style="gap:8px">${icon('phoneMissed', 16)}<b>Missed call · (512) 555-0123</b></div><div class="muted" style="margin-top:6px">AI answered in 1 ring · AC blowing warm air</div></div>
       <div class="fc"><div class="row" style="gap:8px;color:var(--green)">${icon('calendarCheck', 16)}<b style="color:var(--ink)">Job booked · Tue 10am–12pm</b></div><div class="muted" style="margin-top:6px">Confirmation texted · owner alerted</div></div>
@@ -112,10 +112,10 @@ const PROVIDERS = [
     fields: [['retell_api_key', 'API key', 'key_…'], ['retell_voice_id', 'Voice', 'retell-Cimo'], ['retell_model', 'Voice LLM', 'gpt-4.1']],
   },
   {
-    id: 'llm', title: 'SMS AI', logo: icon('sparkles', 18), test: 'llm', required: false,
-    desc: 'Answers caller texts and powers the dashboard assistant. Any OpenAI-compatible API.',
-    link: 'https://platform.openai.com/api-keys',
-    fields: [['llm_api_key', 'API key', 'sk-…'], ['llm_base_url', 'Base URL', 'https://api.openai.com/v1'], ['llm_model', 'Model', 'gpt-4.1-mini']],
+    id: 'llm', title: 'SMS AI · Gemini', logo: icon('sparkles', 18), test: 'llm', required: false,
+    desc: 'Answers caller texts and powers the dashboard assistant. Set up for Google Gemini (free tier); any OpenAI-compatible API works.',
+    link: 'https://aistudio.google.com/apikey',
+    fields: [['llm_api_key', 'Gemini API key', 'AIza…'], ['llm_base_url', 'Base URL', 'https://generativelanguage.googleapis.com/v1beta/openai'], ['llm_model', 'Model', 'gemini-3.8-flash']],
   },
   {
     id: 'smtp', title: 'Email alerts', logo: icon('mail', 18), test: 'smtp', required: false,
@@ -131,7 +131,7 @@ const PROVIDERS = [
 ];
 
 const LLM_PRESETS = [
-  { label: 'Gemini (free tier)', base: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.6-flash', key: 'Gemini API key from aistudio.google.com' },
+  { label: 'Gemini (free tier)', base: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.8-flash', key: 'AIza… (from aistudio.google.com/apikey)' },
   { label: 'OpenAI', base: 'https://api.openai.com/v1', model: 'gpt-4.1-mini', key: 'sk-…' },
   { label: 'Groq', base: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', key: 'gsk_…' },
   { label: 'OpenRouter', base: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4.1-mini', key: 'sk-or-…' },
@@ -305,7 +305,7 @@ export async function viewDemo(slug) {
   document.title = `Talk to ${d.name}'s AI receptionist`;
   app.innerHTML = `<div class="demo-wrap">
     <div class="demo-l"><div class="demo-card">
-      <div class="brand-n">${icon('logo', 22)} ${esc(d.agency)}</div>
+      <div class="brand-n">${brandLogo(36, d.agency)}</div>
       <h1>Call ${esc(d.name)}'s AI receptionist</h1>
       <p class="muted">This is the agent that answers when the team can't pick up. Talk to it like a customer would: it will help, book a visit and text you a confirmation.</p>
       <div class="card" style="margin-top:18px">
@@ -315,7 +315,7 @@ export async function viewDemo(slug) {
           <label class="check"><input type="checkbox" id="dConsent" /> <span class="small">I agree to receive demo texts about this call from ${esc(d.name)}. Msg & data rates may apply. Reply STOP to opt out.</span></label></details>
         <div class="err-t" id="dErr"></div>
       </div>
-      <p class="hint" style="margin-top:12px">Calls are recorded and handled by an AI assistant.</p></div></div>
+      <p class="hint" style="margin-top:12px">Calls are recorded and handled by an AI assistant. Built by <a href="https://automindlab.io" target="_blank" rel="noopener">Automindlab</a>.</p></div></div>
     <div class="auth-r"><div class="floating">
       <div class="fc"><div class="row" style="gap:8px">${icon('bot', 16)}<b>Answers in 1 ring, 24/7</b></div><div class="muted" style="margin-top:6px">${esc(d.services || '').slice(0, 90)}</div></div>
       <div class="fc"><div class="row" style="gap:8px;color:var(--green)">${icon('calendarCheck', 16)}<b style="color:var(--ink)">Books the job · texts the caller</b></div><div class="muted" style="margin-top:6px">Owner alerted with a summary</div></div></div>

@@ -58,8 +58,8 @@ async function save(values, userId, { internal = false } = {}) {
 const DEFAULTS = {
   retell_voice_id: 'retell-Cimo',
   retell_model: 'gpt-4.1',
-  llm_base_url: 'https://api.openai.com/v1',
-  llm_model: 'gpt-4.1-mini',
+  llm_base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  llm_model: 'gemini-3.8-flash',
   smtp_port: 465,
   smtp_secure: true,
   agency_name: 'Automindlab',

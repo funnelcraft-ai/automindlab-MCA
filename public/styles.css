@@ -70,6 +70,13 @@ p { margin: 0 0 10px; }
 .brand { display: flex; align-items: center; justify-content: space-between; padding: 2px 6px 22px; }
 .brand-n { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; letter-spacing: -0.02em; color: var(--ink); }
 .brand-n .ic { color: var(--blue); }
+.brand-n:hover { text-decoration: none; }
+.brand-logo { display: inline-flex; align-items: center; height: var(--h); }
+.brand-logo img { height: var(--h); width: auto; display: block; }
+.brand-logo .logo-d { display: none; }
+[data-theme='dark'] .brand-logo .logo-l { display: none; }
+[data-theme='dark'] .brand-logo .logo-d { display: block; }
+.brand-sub { font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); padding: 0 6px 18px; margin-top: -14px; }
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav a, .nav button.navbtn { position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; color: var(--ink-2); font-weight: 500; font-size: 13px; border: 0; background: none; width: 100%; text-align: left; cursor: pointer; font-family: inherit; }
 .nav a:hover, .nav button.navbtn:hover { background: var(--panel-2); text-decoration: none; color: var(--ink); }

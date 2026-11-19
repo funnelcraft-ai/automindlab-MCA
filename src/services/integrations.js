@@ -42,7 +42,7 @@ async function testLlm() {
     const r = await fetch(`${config.llm.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${config.llm.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: config.llm.model, messages: [{ role: 'user', content: 'Reply with OK' }], max_tokens: 5 }),
+      body: JSON.stringify({ model: config.llm.model, messages: [{ role: 'user', content: 'Reply with OK' }], max_tokens: 200, ...require('../agent/sms-agent').llmExtras() }),
       signal: AbortSignal.timeout(15000),
     });
     const j = await r.json().catch(() => ({}));

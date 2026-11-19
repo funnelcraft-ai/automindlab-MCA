@@ -53,7 +53,7 @@ Each card has **Save & test**, which confirms the key works before you rely on i
 | App address | Public URL (pre-filled on Railway) | Your domain |
 | Twilio | Account SID, Auth Token, optional A2P Messaging Service SID | console.twilio.com → Account info |
 | Retell AI | API key **with the webhook badge** (card on file required) → then **Create voice agent** | dashboard.retellai.com → API keys |
-| SMS AI (optional) | OpenAI-compatible key | platform.openai.com/api-keys |
+| SMS AI · Gemini (optional) | Gemini API key (base URL and `gemini-3.8-flash` are pre-filled) | aistudio.google.com/apikey |
 | Email alerts (optional) | SMTP host/user/password | Zoho / Google Workspace / Hostinger |
 | Google Calendar (optional) | OAuth Web client ID + secret (redirect URI shown on the card) | console.cloud.google.com → Credentials |
 
@@ -73,6 +73,10 @@ The readiness bar turns green when Twilio, Retell, the voice agent and an https 
 **Test mode:** until a business goes live, only its owner, alert and team phones reach the agent; anyone else hears "not in service". You can test end to end without touching real customers. **Pause** takes a live business offline instantly.
 
 Once live, the same page turns into tabbed settings. Business owners can edit their script, hours, booking and alerts from their own login. Phone routing, numbers and go-live stay with the agency.
+
+## Branding
+
+The Automindlab logo lives in `public/brand/` (`logo-light*.png` for light mode, `logo-dark*.png` for dark mode) with favicons in `public/`. To white-label for another agency, replace those files and change the agency name under Integrations > App address.
 
 ## 4. Security
 
